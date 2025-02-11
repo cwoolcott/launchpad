@@ -25,6 +25,18 @@ const restClient = alpaca.rest || new Alpaca().rest;
 const marketData = alpaca.data;
 
 
+async function getBuyingPower() {
+  try {
+    const account = await alpaca.getAccount();
+    const buyingPower = parseFloat(account.buying_power);
+    console.log(`Current Buying Power: $${buyingPower}`);
+    return buyingPower;
+  } catch (error) {
+    console.error("Error fetching buying power:", error.response?.data || error.message);
+    return 0; // Return 0 if API call fails
+  }
+}
+
 async function getHighVolumeStocks() {
    
 
@@ -106,6 +118,8 @@ async function tradeStocks() {
     console.log('Market is closed. Skipping trade cycle.');
     return;
   }
+
+  remainingBudget = await getBuyingPower();
 
   console.log(`Running trade cycle... Remaining Budget: $${remainingBudget}`);
   
