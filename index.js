@@ -19,6 +19,7 @@ let remainingBudget = BUDGET; // Track remaining funds
 
 const STOCKS_TO_MONITOR = 5; // Number of high-volume stocks to monitor
 
+let isTrading = false;
 let monitoredStocks = [];
 
 const restClient = alpaca.rest || new Alpaca().rest;
@@ -119,13 +120,26 @@ async function tradeStocks() {
     return;
   }
 
+  if (isTrading) {
+    console.log("🚨 Trade cycle already running. Skipping this execution.");
+    return;
+  }
+  
+  isTrading = true;
+
   remainingBudget = await getBuyingPower();
 
   console.log(`Running trade cycle... Remaining Budget: $${remainingBudget}`);
   
   const positions = await getCurrentPositions();
-  
+  const processedStocks = new Set();
+
   for (const stock of monitoredStocks) {
+    if (processedStocks.has(stock)) continue; // ✅ Skip duplicates
+    processedStocks.add(stock); // ✅ Mark stock as processed
+
+    console.log("ps:", processedStocks);
+
     const price = await getStockPrice(stock);
     console.log(`Price of ${stock}: $${price}`);
     if (!price) continue;
@@ -180,6 +194,7 @@ async function tradeStocks() {
       remainingBudget -= cost;
     }
   }
+  isTrading = false;
 }
 
 async function checkMarketAndTrade() {
