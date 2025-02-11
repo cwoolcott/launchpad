@@ -14,8 +14,8 @@ const DATA_BASE_URL = 'https://data.alpaca.markets/v2/stocks';
 
 const CHECK_INTERVAL =  2 * 60 * 1000; // 15 minutes in milliseconds
 const WEEKLY_INTERVAL =  3 * 24 * 60 * 60 * 1000; // One week in milliseconds
-const BUDGET = 5000;
-let remainingBudget = BUDGET; // Track remaining funds
+
+let remainingBudget = 5000; // Track remaining funds
 
 const STOCKS_TO_MONITOR = 5; // Number of high-volume stocks to monitor
 
@@ -24,6 +24,17 @@ let monitoredStocks = [];
 
 const restClient = alpaca.rest || new Alpaca().rest;
 const marketData = alpaca.data;
+
+async function checkAccountStatus() {
+  try {
+    const account = await alpaca.getAccount();
+    console.log("Account Status:", account.status);
+    return account.status;
+  } catch (error) {
+    console.error("Error fetching account status:", error.response?.data || error.message);
+    return null;
+  }
+}
 
 
 async function getBuyingPower() {
@@ -69,7 +80,9 @@ async function getHighVolumeStocks() {
 async function getCurrentPositions() {
   try {
     const positions = await alpaca.getPositions();
-    return positions.map(position => ({ symbol: position.symbol, qty: parseInt(position.qty) }));
+    //console.log('Current positions:', positions);
+    
+    return positions.map(position => ({ symbol: position.symbol, avg_entry_price: parseFloat(position.avg_entry_price), qty: parseInt(position.qty) }));
   } catch (error) {
     console.error('Error fetching positions:', error);
     return [];
@@ -127,7 +140,9 @@ async function tradeStocks() {
   
   isTrading = true;
 
+  const accountStatus = await checkAccountStatus();
   remainingBudget = await getBuyingPower();
+  console.log(accountStatus);
 
   console.log(`Running trade cycle... Remaining Budget: $${remainingBudget}`);
   
@@ -138,16 +153,15 @@ async function tradeStocks() {
     if (processedStocks.has(stock)) continue; // ✅ Skip duplicates
     processedStocks.add(stock); // ✅ Mark stock as processed
 
-    console.log("ps:", processedStocks);
-
     const price = await getStockPrice(stock);
     console.log(`Price of ${stock}: $${price}`);
     if (!price) continue;
-    
+    console.log("---1---");
     const position = positions.find(pos => pos.symbol === stock);
-   
+    console.log("---pos---", position);
     // Ensure we do not exceed the remaining budget
     const maxShares = Math.floor(remainingBudget / price);
+
     if (maxShares <= 0) {
       console.log(`Skipping ${stock}: Not enough funds (Remaining Budget: $${remainingBudget})`);
       continue;
@@ -158,20 +172,31 @@ async function tradeStocks() {
     //const tradeAmount = Math.min(maxShares, Math.max(10, Math.floor((1000 / price) * riskFactor)));
     const tradeAmount = Math.min(maxShares, Math.max(10, Math.floor(remainingBudget * 0.1 / price)));
 
+    console.log("---tradeAmount---", tradeAmount);
     if (position) {
       // Sell if price increased by 5% (aggressive strategy)
 
       const buyPrice = parseFloat(position.avg_entry_price); // Ensure it's a number
+      console.log("price >= buyPrice", price, ">=", buyPrice);
       if (price >= buyPrice * 1.03) { //3%
         console.log(`Selling ${position.qty} shares of ${stock} at $${price}`);
-        await alpaca.createOrder({
-          symbol: stock,
-          qty: position.qty,
-          side: 'sell',
-          type: 'market',
-          time_in_force: 'gtc',
-        });
-        remainingBudget += position.market_value;
+        
+        try {
+          await alpaca.createOrder({
+            symbol: stock,
+            qty: position.qty,
+            side: 'sell',
+            type: 'market',
+            time_in_force: 'gtc',
+          });
+          remainingBudget += position.market_value;
+          console.log(`Successfully sold ${position.qty} shares of ${stock} at $${price}`);
+        } catch (error) {
+          console.error(`🚨 Sell order failed for ${stock}:`, error.response?.data || error.message); // ✅ Log API response
+        }
+
+        
+
       }
     } else if (tradeAmount > 0) {
       // Buy stock while staying within budget
@@ -182,16 +207,29 @@ async function tradeStocks() {
       }
 
       console.log(`Buying ${tradeAmount} shares of ${stock} at $${price}, staying within $${remainingBudget} budget.`);
-      await alpaca.createOrder({
-        symbol: stock,
-        qty: tradeAmount,
-        side: 'buy',
-        type: 'market',
-        time_in_force: 'gtc',
-      });
-
-      // Deduct from budget
-      remainingBudget -= cost;
+      
+      
+      try {
+        await alpaca.createOrder({
+          symbol: stock,
+          qty: tradeAmount,
+          side: 'buy',
+          type: 'market',
+          time_in_force: 'gtc',
+        });
+  
+        remainingBudget -= cost;
+        console.log(`Successfully Bought ${position.qty} shares of ${stock} at $${price}`);
+      } catch (error) {
+        console.error(`🚨 Buy order failed for ${stock}:`, error.response?.data || error.message); // ✅ Log API response
+      }
+      
+      
+    }
+    else{
+      console.log(`Skipping ${stock}:`);
+      console.log("price >= buyPrice", price, ">=", buyPrice);
+      console.log("tradeAmount", tradeAmount);
     }
   }
   isTrading = false;
