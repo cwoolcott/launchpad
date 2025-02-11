@@ -132,8 +132,9 @@ async function tradeStocks() {
 
     if (position) {
       // Sell if price increased by 5% (aggressive strategy)
-      const buyPrice = position.avg_entry_price;
-      if (price >= buyPrice * 1.05) {
+
+      const buyPrice = parseFloat(position.avg_entry_price); // Ensure it's a number
+      if (price >= buyPrice * 1.03) { //3%
         console.log(`Selling ${position.qty} shares of ${stock} at $${price}`);
         await alpaca.createOrder({
           symbol: stock,
