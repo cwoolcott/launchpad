@@ -25,6 +25,29 @@ let monitoredStocks = [];
 const restClient = alpaca.rest || new Alpaca().rest;
 const marketData = alpaca.data;
 
+async function safeAxiosRequest(url, params = {}, description = "API request", retries = 3, delay = 5000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+          const response = await axios.get(url, { params, timeout: 15000 });
+          return response.data;
+      } catch (error) {
+          console.error(`🚨 Error fetching ${description} (Attempt ${attempt}/${retries}):`, error.message);
+          if (error.response?.status === 429) {
+              console.warn('⚠️ Rate limit exceeded. Retrying in 60 seconds...');
+              await new Promise(resolve => setTimeout(resolve, 60000));
+              continue;
+          }
+          if (error.code === 'EAI_AGAIN' || error.code === 'ENOTFOUND') {
+              console.warn('🔁 Retrying in 5 seconds...');
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+          }
+          return null;
+      }
+  }
+  return null;
+}
+
 async function checkAccountStatus() {
   try {
     const account = await alpaca.getAccount();
@@ -128,7 +151,8 @@ async function getStockPrice(symbol) {
 
 
 async function tradeStocks() {
-  if (!(await alpaca.getClock()).is_open) {
+  const clock = await safeAlpacaRequest(() => alpaca.getClock(), "market clock");
+  if (!clock || !clock.is_open) {
     console.log('Market is closed. Skipping trade cycle.');
     return;
   }
@@ -236,8 +260,8 @@ async function tradeStocks() {
 }
 
 async function checkMarketAndTrade() {
-    const clock = await alpaca.getClock();
-    if (clock.is_open) {
+    const clock = await safeAlpacaRequest(() => alpaca.getClock(), "market clock");
+    if (clock && clock.is_open) {
         console.log('Executing trade cycle during market hours.');
         tradeStocks();
     } else {
@@ -246,8 +270,8 @@ async function checkMarketAndTrade() {
 }
 
 async function checkMarketAndUpdateStocks() {
-    const clock = await alpaca.getClock();
-    if (!clock.is_open) {
+    const clock = await safeAlpacaRequest(() => alpaca.getClock(), "market clock");
+    if (!clock || !clock.is_open) {
         console.log('Market is closed. Skipping weekly stock update.');
         return;
     }
@@ -257,16 +281,17 @@ async function checkMarketAndUpdateStocks() {
 }
 
 async function dayTrade() {
-  const clock = await alpaca.getClock();
+
     checkMarketAndTrade();
-    if (!clock.is_open) {
+    const clock = await safeAlpacaRequest(() => alpaca.getClock(), "market clock");
+    if (!clock || !clock.is_open) {
         console.log('Market is closed. Skipping weekly stock update.');
         return;
     }
     monitoredStocks = await getHighVolumeStocks();
     console.log('Updated monitored stocks:', monitoredStocks);
 
-    if (clock.is_open) {
+    if (clock || clock.is_open) {
         console.log('Executing trade cycle during market hours.');
         await tradeStocks();
     } else {
@@ -276,8 +301,8 @@ async function dayTrade() {
 
 async function weekTrade() {
   checkMarketAndUpdateStocks();
-  const clock = await alpaca.getClock();
-  if (!clock.is_open) {
+  const clock = await safeAlpacaRequest(() => alpaca.getClock(), "market clock");
+  if (!clock || !clock.is_open) {
       console.log('Market is closed. Skipping weekly stock update.');
       return;
   }
