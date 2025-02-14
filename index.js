@@ -25,7 +25,7 @@ let monitoredStocks = [];
 const restClient = alpaca.rest || new Alpaca().rest;
 const marketData = alpaca.data;
 
-async function safeAxiosRequest(url, params = {}, description = "API request", retries = 3, delay = 5000) {
+async function safeAlpacaRequest(url, params = {}, description = "API request", retries = 3, delay = 5000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
       try {
           const response = await axios.get(url, { params, timeout: 15000 });
