@@ -252,7 +252,6 @@ async function tradeStocks() {
     }
     else{
       console.log(`Skipping ${stock}:`);
-      console.log("price >= buyPrice", price, ">=", buyPrice);
       console.log("tradeAmount", tradeAmount);
     }
   }
